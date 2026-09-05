@@ -1,6 +1,4 @@
-from django.shortcuts import render
-
-# Create your views here.
+from django.db import transaction
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -30,21 +28,21 @@ class ReservationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Reservation.objects.all()
         event_id = self.request.query_params.get('event_id')
-
         if event_id:
             queryset = queryset.filter(event_id=event_id)
-
         return queryset
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def cancel(self, request, pk=None):
         reservation = self.get_object()
 
         if reservation.status == 'cancelled':
             return Response({'error': 'Already cancelled.'}, status=400)
 
-        reservation.event.available_seats += reservation.seats_reserved
-        reservation.event.save()
+        event = Event.objects.select_for_update().get(pk=reservation.event_id)
+        event.available_seats += reservation.seats_reserved
+        event.save()
 
         reservation.status = 'cancelled'
         reservation.save()

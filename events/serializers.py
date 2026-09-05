@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import serializers
 from .models import Event, Reservation
 
@@ -43,8 +44,20 @@ class ReservationSerializer(serializers.ModelSerializer):
             )
         return data
 
+    @transaction.atomic
     def create(self, validated_data):
-        event = validated_data['event']
+        # Lock the Event row so no other transaction can read/modify it until we're done
+        event = Event.objects.select_for_update().get(pk=validated_data['event'].pk)
+
+        if validated_data['seats_reserved'] > event.available_seats:
+            raise serializers.ValidationError(
+                f'Only {event.available_seats} seat(s) available.'
+            )
+
         event.available_seats -= validated_data['seats_reserved']
         event.save()
+
+        validated_data['event'] = event
         return Reservation.objects.create(**validated_data)
+
+        

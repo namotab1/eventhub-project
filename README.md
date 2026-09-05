@@ -27,14 +27,19 @@ A backend API for a simplified event ticketing platform — browse events, reser
 
 ## Design Decision
 
-I deduct `available_seats` and create the `Reservation` inside the same 
-`ReservationSerializer.create()` method rather than in the view, so both writes 
-happen together in one place. I also chose to validate seat availability and event 
-status inside the serializer's `validate()` method rather than the view, keeping 
-all business rules for a reservation colocated with the data it validates. In a 
-production system with concurrent bookings, this would need `transaction.atomic()` 
-plus row locking to prevent two users overbooking the same last seat — out of 
-scope for this assignment, but worth flagging as a known limitation.
+Reservation creation and cancellation are wrapped in `transaction.atomic()` combined 
+with `select_for_update()` on the Event row. This ensures that when two requests try 
+to book the same last seat simultaneously, the second request is forced to wait until 
+the first transaction fully commits, then re-checks availability and correctly rejects 
+the overbooking attempt. This is verified with an automated test (`ConcurrencyTests`) 
+that fires two real concurrent threads against the last remaining seat and asserts 
+exactly one succeeds and one is rejected with a 400.
+
+## Testing
+
+Run `python manage.py test events` to execute all 8 tests, covering reservation 
+creation, overbooking rejection, cancellation (including double-cancel rejection), 
+event/reservation filtering, and concurrent last-seat booking.
 
 ## Postman Screenshots
 
